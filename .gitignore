@@ -1,6 +1,6 @@
-128x128/
-256x256/
-STLfiles/
-preProjectionSeq/
-ImageSeq/
+128x128/*
+256x256/*
+STLfiles/*
+preProjectionSeq/*
+ImageSeq/*
 MLSpeed/
