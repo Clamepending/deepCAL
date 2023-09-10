@@ -6,7 +6,7 @@ import time
 
 # settings
 
-dimension = [512, 512] #2560 1600
+dimension = [128, 128] #2560 1600
 OutputFolder = "./ImageSeq"
 InputFolder = "./STLfiles/"
 PreProjectionFolder = "./preProjectionSeq"
@@ -78,7 +78,7 @@ def scale_to_fit(image_normalized, desired_height, desired_width):
     return buffer_image
 
 
-def saveProjections(b, save_dir: str, image_prefix: str = "image", image_type: str = ".png"):
+def saveProjections(b, save_dir, image_prefix = "image", image_type = ".png"):
     for k in range(len(b[0, :, 0])):
         save_path = os.path.join(save_dir, f"{image_prefix}{str(k).zfill(4)}{image_type}")
         print(f"save path = {save_path}")
