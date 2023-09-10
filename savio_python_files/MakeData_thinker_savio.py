@@ -80,7 +80,7 @@ def scale_to_fit(image_normalized, desired_height, desired_width):
 
 def saveProjections(b, save_dir, image_prefix = "image", image_type = ".png"):
     for k in range(len(b[0, :, 0])):
-        save_path = os.path.join(save_dir, f"{image_prefix}{str(k).zfill(4)}{image_type}")
+        save_path = os.path.join(save_dir, "{}{}{}".format(image_prefix, str(k).zfill(4), image_type))
         print(f"save path = {save_path}")
         image = b[:, k, :]
 
