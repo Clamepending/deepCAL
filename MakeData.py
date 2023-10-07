@@ -6,7 +6,7 @@ import time
 
 # settings
 
-dimension = [128, 128] #2560 1600
+dimension = [256, 256] #2560 1600
 OutputFolder = "./ImageSeq"
 InputFolder = "./STLfiles/"
 PreProjectionFolder = "./preProjectionSeq"
