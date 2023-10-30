@@ -360,7 +360,7 @@ def load_png_to_numpy_array(folder_path, rotate=False):
             image_list.append(np.array(img))
 
 
-
+    # image_list = image_list[::-1] # images are flipped like in a mirror so we un-flip them
     images_array = np.array(image_list)
 
     if rotate:
@@ -407,6 +407,7 @@ def inverse_radon(projections, STLfile_name, resolution):
     
     target_geo.nX = target_shape[0]
     target_geo.nY = target_shape[1]
+    # projections = projections[::-1]
 
 
     from vamtoolbox.projector.Projector3DParallelCUDA import Projector3DParallelCUDAAstra
@@ -434,6 +435,17 @@ def MSE(array1, array2):
     mse = squared_diff.mean()
     return mse
 
+def zero(array1, array2):
+    return 0
+
+def fourth(array1, array2):
+    fourth_diff = abs((array1 - array2) ** 3)
+    return fourth_diff.mean()
+
+def CUBED(array1, array2):
+    cubed_diff = abs((array1 - array2) ** 3)
+    return cubed_diff.mean()
+
 def round_3d_array(array, round_down_threshold, round_up_threshold):
     rounded_array = [[[0 if value <= round_down_threshold else 1 if value >= round_up_threshold else 0.5 for value in row] for row in plane] for plane in array]
     return rounded_array
@@ -443,7 +455,7 @@ def L1_dif(array1, array2):
     l1_norm = np.sum(np.abs(array1 - array2))
     return l1_norm
 
-def count_above_dif_threshold(array1, array2, threshold):
+def count_above_dif_threshold(array1, array2, threshold = 0.2):
     # Calculate absolute differences between the two arrays
     abs_diff = np.abs(array1 - array2)
     
