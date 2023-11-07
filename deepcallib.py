@@ -455,6 +455,11 @@ def L1_dif(array1, array2):
     l1_norm = np.sum(np.abs(array1 - array2))
     return l1_norm
 
+def total_dose_dif(array1, array2):
+    # Calculate the L1 norm (sum of absolute differences)
+    return abs(np.sum(array1) - np.sum(array2))
+    
+
 def count_above_dif_threshold(array1, array2, threshold = 0.2):
     # Calculate absolute differences between the two arrays
     abs_diff = np.abs(array1 - array2)
@@ -486,6 +491,133 @@ def compare(array1, array2):
     print(f"MSE: {mse}, L1: {l1}, % of different voxels above {threshold}: {count/total_pixels} solidified voxel difference to STL: {solidified_voxel_differences}")
 
 
+"""
+find voxels of value VALUE that are neighbors with voxels that dont  have value VAUE
+"""
+def find_border_voxels(arr, value):
+    # Create an array to store the neighboring offsets
+    neighbor_offsets = np.array([
+        [-1, 0, 0], [1, 0, 0],
+        [0, -1, 0], [0, 1, 0],
+        [0, 0, -1], [0, 0, 1]
+    ])
+
+    adjacent_voxels = []
+
+    # Iterate through the 3D array
+    for z in range(arr.shape[0]):
+        for x in range(arr.shape[1]):
+            for y in range(arr.shape[2]):
+                if arr[z, x, y] == value:
+                    # Check neighboring voxels
+                    for offset in neighbor_offsets:
+                        nz, nx, ny = z + offset[0], x + offset[1], y + offset[2]
+                        if (
+                            0 <= nz < arr.shape[0] and
+                            0 <= nx < arr.shape[1] and
+                            0 <= ny < arr.shape[2] and
+                            arr[nz, nx, ny] != value
+                        ):
+                            adjacent_voxels.append((z, x, y))
+                            break  # No need to check other neighbors
+
+    return adjacent_voxels
+
+
+
+
+from collections import deque
+"""
+performs bfs starting at start_point on space array. Stops when it seems a voxel with float_value
+"""
+def bfs_search(float_value, start_point, space_array):
+    # Define the 6 possible movement directions in 3D space
+    directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+
+    # Convert the space_array to a NumPy array for efficient indexing
+    space_array = np.array(space_array)
+
+    # Create a set to keep track of visited coordinates
+    visited = set()
+
+    # Create a queue for BFS with the starting point and depth
+    queue = deque([(start_point, 0)])
+
+    while queue:
+        current_point, depth = queue.popleft()
+
+        # Check if the current point has the desired float value
+        if space_array[current_point] == float_value:
+            return current_point
+
+        # Mark the current point as visited
+        visited.add(current_point)
+
+        # Expand to neighboring coordinates
+        for direction in directions:
+            new_point = tuple(np.add(current_point, direction))
+
+            # Check if the new point is within the space boundaries
+            if all(0 <= i < dim for i, dim in zip(new_point, space_array.shape)) and new_point not in visited:
+                queue.append((new_point, depth + 1))
+
+    # If the desired value is not found, return None
+    return None
+
+import math
+"""
+returns l2 norm of 3d tuples (voxels)
+"""
+def l2norm(x, y):
+    return math.sqrt((x[0] - y[0])**2 + (x[1] - y[1])**2 + (x[2] - y[2])**2)
+
+"""
+MAKE SURE TO ROUND THE GROUND TRUTH AND RECONSTRUCTIONS so that solid voxels are 1.0, empty voxels are 0.0 nd in between is not counted
+
+NOTE: The comparison does NOT include corners as borders.
+i.e. 
+[[1,2],
+[3,4]]
+means 1 is on border of 2 and 3, but is not a neighbor of 4
+"""
+def surface_compare(ground_truth, recon):
+    reconstruction = round_3d_array(recon, round_down_threshold = 0.6, round_up_threshold = 0.85)
+
+    ground_truth_cured_surface = find_border_voxels(ground_truth, 1.0) # gets a list of voxel coordinates on the surface (cured)
+    reconstruction_surface_mapping = [bfs_search(1.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_cured_surface]
+    
+    # check if all voxels found an estimated counterpart, if not, return infinity
+    if None in reconstruction_surface_mapping:
+        cured_voxel_error = np.inf
+    else:
+        # sum the error
+        cured_voxel_error = 0
+        for i in range(len(ground_truth_cured_surface)):
+            cured_voxel_error += l2norm(ground_truth_cured_surface[i], reconstruction_surface_mapping[i])
+
+    ground_truth_uncured_surface = find_border_voxels(ground_truth, 0.0) # gets a list of voxel coordinates on the surface (uncured)
+    reconstruction_uncured_surface_mapping = [bfs_search(0.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_uncured_surface]
+
+    # check if all voxels found an estimated counterpart, if not, return infinity
+    if None in reconstruction_uncured_surface_mapping:
+        uncured_voxel_error = np.inf
+    else:
+        # sum the error
+        uncured_voxel_error = 0
+        for i in range(len(ground_truth_uncured_surface)):
+            uncured_voxel_error += l2norm(ground_truth_uncured_surface[i], reconstruction_uncured_surface_mapping[i])
+    
+    return cured_voxel_error, uncured_voxel_error
+    
+
+def surface_compare_combined_error(ground_truth, reconstruction):
+    return sum(surface_compare(ground_truth,  reconstruction))
+        
+
+
+
+
+
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -497,7 +629,7 @@ def plot(data, d_l=0.1, d_h=1):
     vol = vedo.Volume(data).legosurface(vmin=d_l,vmax=d_h)
     vol.show(viewup="x")
 
-def calculate_optimal_rotations(ground_truth, predicted, error_function, max_iterations=5, initial_range=[0, 4], resolution=6, name="undefined"):
+def calculate_optimal_rotations(ground_truth, predicted, error_function, max_iterations=5, initial_range=[0, 4], resolution=6, name="undefined", print_errors = False):
     best_error = float('inf')
     best_rotations = 0
     error = []
@@ -509,7 +641,13 @@ def calculate_optimal_rotations(ground_truth, predicted, error_function, max_ite
         print(f"checking {initial_range[0]} to {initial_range[1]}")
         for i in range(resolution):
             temp = (initial_range[0] + i * step_size) * predicted
+
+
+            print("is temp fucked",(initial_range[0] + i * step_size))
+            
             error.append(error_function(ground_truth, temp))
+            if print_errors:
+                print(f"error at {(initial_range[0] + i * step_size)} is {error[-1]}")
             rotations_number.append((initial_range[0] + i * step_size))
 
         # Find the index of the minimum error in the current window
