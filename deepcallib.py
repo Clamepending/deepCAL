@@ -448,7 +448,7 @@ def CUBED(array1, array2):
 
 def round_3d_array(array, round_down_threshold, round_up_threshold):
     rounded_array = [[[0 if value <= round_down_threshold else 1 if value >= round_up_threshold else 0.5 for value in row] for row in plane] for plane in array]
-    return rounded_array
+    return np.array(rounded_array)
 
 def L1_dif(array1, array2):
     # Calculate the L1 norm (sum of absolute differences)
@@ -491,9 +491,37 @@ def compare(array1, array2):
     print(f"MSE: {mse}, L1: {l1}, % of different voxels above {threshold}: {count/total_pixels} solidified voxel difference to STL: {solidified_voxel_differences}")
 
 
-"""
-find voxels of value VALUE that are neighbors with voxels that dont  have value VAUE
-"""
+# """
+# find voxels of value VALUE that are neighbors with voxels that dont  have value VAUE
+# """
+# def find_border_voxels(arr, value):
+#     # Create an array to store the neighboring offsets
+#     neighbor_offsets = np.array([
+#         [-1, 0, 0], [1, 0, 0],
+#         [0, -1, 0], [0, 1, 0],
+#         [0, 0, -1], [0, 0, 1]
+#     ])
+
+#     adjacent_voxels = []
+
+#     # Iterate through the 3D array
+#     for z in range(arr.shape[0]):
+#         for x in range(arr.shape[1]):
+#             for y in range(arr.shape[2]):
+#                 if arr[z, x, y] == value:
+#                     # Check neighboring voxels
+#                     for offset in neighbor_offsets:
+#                         nz, nx, ny = z + offset[0], x + offset[1], y + offset[2]
+#                         if (
+#                             0 <= nz < arr.shape[0] and
+#                             0 <= nx < arr.shape[1] and
+#                             0 <= ny < arr.shape[2] and
+#                             arr[nz, nx, ny] != value
+#                         ):
+#                             adjacent_voxels.append((z, x, y))
+#                             break  # No need to check other neighbors
+
+#     return adjacent_voxels
 def find_border_voxels(arr, value):
     # Create an array to store the neighboring offsets
     neighbor_offsets = np.array([
@@ -502,40 +530,29 @@ def find_border_voxels(arr, value):
         [0, 0, -1], [0, 0, 1]
     ])
 
-    adjacent_voxels = []
+    # Find indices of voxels with the specified value
+    value_indices = np.column_stack(np.where(arr == value))
 
-    # Iterate through the 3D array
-    for z in range(arr.shape[0]):
-        for x in range(arr.shape[1]):
-            for y in range(arr.shape[2]):
-                if arr[z, x, y] == value:
-                    # Check neighboring voxels
-                    for offset in neighbor_offsets:
-                        nz, nx, ny = z + offset[0], x + offset[1], y + offset[2]
-                        if (
-                            0 <= nz < arr.shape[0] and
-                            0 <= nx < arr.shape[1] and
-                            0 <= ny < arr.shape[2] and
-                            arr[nz, nx, ny] != value
-                        ):
-                            adjacent_voxels.append((z, x, y))
-                            break  # No need to check other neighbors
+    # Find indices of neighboring voxels without the specified value
+    neighbor_indices = [
+        tuple(idx + offset) for idx in value_indices
+        for offset in neighbor_offsets
+        if np.all((0 <= idx + offset) & (idx + offset < arr.shape)) and arr[tuple(idx + offset)] != value
+    ]
 
-    return adjacent_voxels
+    return neighbor_indices
 
 
 
 
+#TODO: change the dijkstras if possible for more accurate distance priorities
 from collections import deque
 """
 performs bfs starting at start_point on space array. Stops when it seems a voxel with float_value
 """
-def bfs_search(float_value, start_point, space_array):
+def bfs_search(float_value, start_point, space_array, max_distance = 3):
     # Define the 6 possible movement directions in 3D space
     directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
-
-    # Convert the space_array to a NumPy array for efficient indexing
-    space_array = np.array(space_array)
 
     # Create a set to keep track of visited coordinates
     visited = set()
@@ -548,6 +565,10 @@ def bfs_search(float_value, start_point, space_array):
 
         # Check if the current point has the desired float value
         if space_array[current_point] == float_value:
+            return current_point
+        
+        # check if we should give up on finding the point
+        if depth >= max_distance:
             return current_point
 
         # Mark the current point as visited
@@ -580,28 +601,39 @@ i.e.
 [3,4]]
 means 1 is on border of 2 and 3, but is not a neighbor of 4
 """
-def surface_compare(ground_truth, recon):
+def surface_compare(ground_truth, recon, multithreaded=True):
+    print("rounding array")
     reconstruction = round_3d_array(recon, round_down_threshold = 0.6, round_up_threshold = 0.85)
+    print("done rounding array")
+    if not (reconstruction == 0).any():
+        return 0, np.inf
+    if not (reconstruction == 1).any():
+        return np.inf, 0
 
+    print(f"finding border voxels...")
     ground_truth_cured_surface = find_border_voxels(ground_truth, 1.0) # gets a list of voxel coordinates on the surface (cured)
-    reconstruction_surface_mapping = [bfs_search(1.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_cured_surface]
     
-    # check if all voxels found an estimated counterpart, if not, return infinity
-    if None in reconstruction_surface_mapping:
-        cured_voxel_error = np.inf
+    print(f"finding bfs of border voxels... {len(ground_truth_cured_surface)}")
+    if multithreaded:
+        cured_voxel_error = bfs_search_c(1.0, ground_truth_cured_surface, reconstruction)
     else:
+        reconstruction_surface_mapping = [bfs_search(1.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_cured_surface]
+        print("done finding bfs of border voxels...")
+        
         # sum the error
         cured_voxel_error = 0
         for i in range(len(ground_truth_cured_surface)):
             cured_voxel_error += l2norm(ground_truth_cured_surface[i], reconstruction_surface_mapping[i])
 
+    print("finding border voxels...")
     ground_truth_uncured_surface = find_border_voxels(ground_truth, 0.0) # gets a list of voxel coordinates on the surface (uncured)
-    reconstruction_uncured_surface_mapping = [bfs_search(0.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_uncured_surface]
-
-    # check if all voxels found an estimated counterpart, if not, return infinity
-    if None in reconstruction_uncured_surface_mapping:
-        uncured_voxel_error = np.inf
+    print(f"finding bfs of border voxels... {len(ground_truth_uncured_surface)}")
+    if multithreaded:
+        uncured_voxel_error = bfs_search_c(0.0, ground_truth_uncured_surface, reconstruction)
     else:
+        reconstruction_uncured_surface_mapping = [bfs_search(0.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_uncured_surface]
+        print("done finding bfs of border voxels...")
+    
         # sum the error
         uncured_voxel_error = 0
         for i in range(len(ground_truth_uncured_surface)):
@@ -610,13 +642,8 @@ def surface_compare(ground_truth, recon):
     return cured_voxel_error, uncured_voxel_error
     
 
-def surface_compare_combined_error(ground_truth, reconstruction):
-    return sum(surface_compare(ground_truth,  reconstruction))
-        
-
-
-
-
+def surface_compare_combined_error(ground_truth, reconstruction, speedup='none'):
+    return sum(surface_compare(ground_truth,  reconstruction, multithreaded=False))
 
 
 import matplotlib.pyplot as plt
@@ -629,7 +656,7 @@ def plot(data, d_l=0.1, d_h=1):
     vol = vedo.Volume(data).legosurface(vmin=d_l,vmax=d_h)
     vol.show(viewup="x")
 
-def calculate_optimal_rotations(ground_truth, predicted, error_function, max_iterations=5, initial_range=[0, 4], resolution=6, name="undefined", print_errors = False):
+def calculate_optimal_rotations(ground_truth, predicted, error_function, max_iterations=5, initial_range=[0, 4], resolution=5, name="undefined", print_errors = False):
     best_error = float('inf')
     best_rotations = 0
     error = []
@@ -643,7 +670,7 @@ def calculate_optimal_rotations(ground_truth, predicted, error_function, max_ite
             temp = (initial_range[0] + i * step_size) * predicted
 
 
-            print("is temp fucked",(initial_range[0] + i * step_size))
+            # print("is temp fucked",(initial_range[0] + i * step_size))
             
             error.append(error_function(ground_truth, temp))
             if print_errors:
@@ -745,3 +772,46 @@ def batch_rotate_stl_files(input_folder, output_folder):
         output_path = os.path.join(output_folder, stl_file)
         rotate_stl(input_path, output_path)
         print(f"Rotated: {stl_file}")
+
+
+################################################################
+# C code calling to speed up bfs
+################################################################
+
+import ctypes
+so_file = "./deepcallib_helper.so"
+
+c_functions = ctypes.CDLL(so_file)  # On Windows, use '.dll' extension
+
+# Define the Point structure in Python to match the C structure
+class Point(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_int), ("y", ctypes.c_int), ("z", ctypes.c_int)]
+
+# Define the Node structure in Python to match the C structure
+class Node(ctypes.Structure):
+    _fields_ = [("point", Point), ("depth", ctypes.c_int)]
+
+# Define the function signature for the C function
+bfs_function = c_functions.bfs
+bfs_function.argtypes = [ctypes.c_float, ctypes.POINTER(Point), ctypes.c_int, ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+bfs_function.restype = ctypes.c_double
+"""
+performs bfs starting at start_point on space array. Stops when it seems a voxel with float_value
+"""
+
+def bfs_search_c(float_value, start_points, space_array, max_distance=3):
+    # Convert Python list of start points to a C array of Point structures
+    start_points_array = (Point * len(start_points))(*start_points)
+
+    # Convert NumPy array to a C array
+    space_array_c = space_array.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+
+    # Get the dimensions of the space array
+    space_dimensions = np.array(space_array.shape, dtype=np.int32)
+
+    # Call the C function
+    result = bfs_function(float_value, start_points_array, len(start_points), space_array_c, max_distance, space_dimensions.ctypes.data_as(ctypes.POINTER(ctypes.c_int)))
+
+    print("Result from C:", result)
+    return result
+    
