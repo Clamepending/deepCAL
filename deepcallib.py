@@ -550,7 +550,7 @@ from collections import deque
 """
 performs bfs starting at start_point on space array. Stops when it seems a voxel with float_value
 """
-def bfs_search(float_value, start_point, space_array, max_distance = 3):
+def bfs_search(float_value, start_point, space_array, max_distance = 10):
     # Define the 6 possible movement directions in 3D space
     directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
 
@@ -601,7 +601,7 @@ i.e.
 [3,4]]
 means 1 is on border of 2 and 3, but is not a neighbor of 4
 """
-def surface_compare(ground_truth, recon, multithreaded=True):
+def surface_compare(ground_truth, recon, multithreaded=False):
     print("rounding array")
     reconstruction = round_3d_array(recon, round_down_threshold = 0.6, round_up_threshold = 0.85)
     print("done rounding array")
