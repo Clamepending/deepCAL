@@ -550,7 +550,7 @@ from collections import deque
 """
 performs bfs starting at start_point on space array. Stops when it seems a voxel with float_value
 """
-def bfs_search(float_value, start_point, space_array, max_distance = 10):
+def bfs_search(float_value, start_point, space_array, max_distance = 3):
     # Define the 6 possible movement directions in 3D space
     directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
 
@@ -569,7 +569,8 @@ def bfs_search(float_value, start_point, space_array, max_distance = 10):
         
         # check if we should give up on finding the point
         if depth >= max_distance:
-            return current_point
+            return (0,0,4096) + start_point
+            # return current_point
 
         # Mark the current point as visited
         visited.add(current_point)
@@ -643,7 +644,7 @@ def surface_compare(ground_truth, recon, multithreaded=False):
     
 
 def surface_compare_combined_error(ground_truth, reconstruction, speedup='none'):
-    return sum(surface_compare(ground_truth,  reconstruction, multithreaded=False))
+    return sum(surface_compare(ground_truth,  reconstruction, multithreaded=True))
 
 
 import matplotlib.pyplot as plt
@@ -811,7 +812,8 @@ def bfs_search_c(float_value, start_points, space_array, max_distance=3):
 
     # Call the C function
     result = bfs_function(float_value, start_points_array, len(start_points), space_array_c, max_distance, space_dimensions.ctypes.data_as(ctypes.POINTER(ctypes.c_int)))
-
+    # result = c_functions.lol()
+    # result= 0
     print("Result from C:", result)
     return result
     
