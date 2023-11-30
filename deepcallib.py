@@ -593,6 +593,7 @@ returns l2 norm of 3d tuples (voxels)
 def l2norm(x, y):
     return math.sqrt((x[0] - y[0])**2 + (x[1] - y[1])**2 + (x[2] - y[2])**2)
 
+
 """
 MAKE SURE TO ROUND THE GROUND TRUTH AND RECONSTRUCTIONS so that solid voxels are 1.0, empty voxels are 0.0 nd in between is not counted
 
@@ -602,17 +603,7 @@ i.e.
 [3,4]]
 means 1 is on border of 2 and 3, but is not a neighbor of 4
 """
-def surface_compare(ground_truth, recon, multithreaded=False):
-    print("rounding array")
-    reconstruction = round_3d_array(recon, round_down_threshold = 0.6, round_up_threshold = 0.85)
-    print("done rounding array")
-    if not (reconstruction == 0).any():
-        return 0, np.inf
-    if not (reconstruction == 1).any():
-        return np.inf, 0
-
-    print(f"finding border voxels...")
-    ground_truth_cured_surface = find_border_voxels(ground_truth, 1.0) # gets a list of voxel coordinates on the surface (cured)
+def surface_compare(ground_truth_cured_surface, ground_truth_uncured_surface, reconstruction, multithreaded=True):
     
     print(f"finding bfs of border voxels... {len(ground_truth_cured_surface)}")
     if multithreaded:
@@ -626,8 +617,7 @@ def surface_compare(ground_truth, recon, multithreaded=False):
         for i in range(len(ground_truth_cured_surface)):
             cured_voxel_error += l2norm(ground_truth_cured_surface[i], reconstruction_surface_mapping[i])
 
-    print("finding border voxels...")
-    ground_truth_uncured_surface = find_border_voxels(ground_truth, 0.0) # gets a list of voxel coordinates on the surface (uncured)
+    
     print(f"finding bfs of border voxels... {len(ground_truth_uncured_surface)}")
     if multithreaded:
         uncured_voxel_error = bfs_search_c(0.0, ground_truth_uncured_surface, reconstruction)
@@ -643,8 +633,9 @@ def surface_compare(ground_truth, recon, multithreaded=False):
     return cured_voxel_error, uncured_voxel_error
     
 
-def surface_compare_combined_error(ground_truth, reconstruction, speedup='none'):
-    return sum(surface_compare(ground_truth,  reconstruction, multithreaded=True))
+def surface_compare_combined_error(ground_truth_cured_surface, ground_truth_uncured_surface, reconstruction):
+    
+    return sum(surface_compare(ground_truth_cured_surface, ground_truth_uncured_surface, reconstruction))
 
 
 import matplotlib.pyplot as plt
@@ -657,6 +648,74 @@ def plot(data, d_l=0.1, d_h=1):
     vol = vedo.Volume(data).legosurface(vmin=d_l,vmax=d_h)
     vol.show(viewup="x")
 
+def calculate_optimal_rotations_surface_compare(ground_truth, predicted, max_iterations=5, initial_range=[0, 4], resolution=5, name="undefined", print_errors = False):
+    best_error = float('inf')
+    best_rotations = 0
+    error = []
+    rotations_number = []
+    print("processing ground truth")
+    ground_truth = round_3d_array(ground_truth, round_down_threshold = 0.6, round_up_threshold = 0.85)
+    
+    
+    print(f"finding border voxels...")
+    ground_truth_cured_surface = find_border_voxels(ground_truth, 1.0) # gets a list of voxel coordinates on the surface (cured)
+    ground_truth_uncured_surface = find_border_voxels(ground_truth, 0.0) # gets a list of voxel coordinates on the surface (cured)
+    print("done finding border voxels...")
+
+    for iteration in range(max_iterations):
+        # Sample 'resolution' number of points in the interval 'initial_range'
+        step_size = (initial_range[1] - initial_range[0]) / (resolution - 1)
+        print(f"checking {initial_range[0]} to {initial_range[1]}")
+        for i in range(resolution):
+            temp = (initial_range[0] + i * step_size) * predicted
+            temp = round_3d_array(temp, round_down_threshold = 0.6, round_up_threshold = 0.85)
+
+            # calculate the error
+            if not (temp == 0).any():
+                error.append(np.inf)
+            elif not (temp == 1).any():
+                error.append(np.inf)
+            else:
+                error.append(surface_compare_combined_error(ground_truth_cured_surface,  ground_truth_uncured_surface, temp))
+            
+            if print_errors:
+                print(f"error at {(initial_range[0] + i * step_size)} is {error[-1]}")
+            rotations_number.append((initial_range[0] + i * step_size))
+
+        # Find the index of the minimum error in the current window
+        min_error_idx = error.index(min(error))
+
+        # Update the best error and rotations
+        if error[min_error_idx] < best_error:
+            best_error = error[min_error_idx]
+            best_rotations = rotations_number[min_error_idx]
+
+        # Update the search window for the next iteration
+        # Ensure the range is centered around the minimum error point
+        center = rotations_number[min_error_idx]
+        width = (initial_range[1] - initial_range[0]) / 4
+        initial_range = [center - width, center + width]
+
+    # Create a figure and plot all data points
+    sorted_lists = zip(rotations_number, error)
+    sorted_lists = sorted(sorted_lists, key=lambda x: x[0])
+    rotations_number, error = zip(*sorted_lists)
+    plt.figure(figsize=(10, 6))
+    plt.plot(rotations_number, error, marker='o')
+    plt.title(f'Error vs. Rotation Factor for {name}')
+    plt.xlabel('Rotation Factor')
+    plt.ylabel('Error')
+    plt.grid(True)
+
+    plt.axvline(x=best_rotations, color='r', linestyle='--', label='Minimum Error')
+
+    plt.legend()
+    plt.show()
+
+    return best_rotations
+
+
+# use for non-surface compare funcitons
 def calculate_optimal_rotations(ground_truth, predicted, error_function, max_iterations=5, initial_range=[0, 4], resolution=5, name="undefined", print_errors = False):
     best_error = float('inf')
     best_rotations = 0
@@ -811,9 +870,6 @@ def bfs_search_c(float_value, start_points, space_array, max_distance=3):
     space_dimensions = np.array(space_array.shape, dtype=np.int32)
 
     # Call the C function
-    result = bfs_function(float_value, start_points_array, len(start_points), space_array_c, max_distance, space_dimensions.ctypes.data_as(ctypes.POINTER(ctypes.c_int)))
-    # result = c_functions.lol()
-    # result= 0
-    print("Result from C:", result)
-    return result
+    return bfs_function(float_value, start_points_array, len(start_points), space_array_c, max_distance, space_dimensions.ctypes.data_as(ctypes.POINTER(ctypes.c_int)))
+    
     
