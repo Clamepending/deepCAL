@@ -447,7 +447,7 @@ def CUBED(array1, array2):
     return cubed_diff.mean()
 
 def round_3d_array(array, round_down_threshold, round_up_threshold):
-    rounded_array = [[[0 if value <= round_down_threshold else 1 if value >= round_up_threshold else 0.5 for value in row] for row in plane] for plane in array]
+    rounded_array = [[[0 if value <= round_down_threshold else 1 if value >= round_up_threshold else 2 for value in row] for row in plane] for plane in array]
     return np.array(rounded_array)
 
 def L1_dif(array1, array2):
@@ -607,9 +607,9 @@ def surface_compare(ground_truth_cured_surface, ground_truth_uncured_surface, re
     
     print(f"finding bfs of border voxels... {len(ground_truth_cured_surface)}")
     if multithreaded:
-        cured_voxel_error = bfs_search_c(1.0, ground_truth_cured_surface, reconstruction)
+        cured_voxel_error = sum(bfs_search_c(1, ground_truth_cured_surface, reconstruction))
     else:
-        reconstruction_surface_mapping = [bfs_search(1.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_cured_surface]
+        reconstruction_surface_mapping = [bfs_search(1, surface_voxel, reconstruction) for surface_voxel in ground_truth_cured_surface]
         print("done finding bfs of border voxels...")
         
         # sum the error
@@ -620,9 +620,9 @@ def surface_compare(ground_truth_cured_surface, ground_truth_uncured_surface, re
     
     print(f"finding bfs of border voxels... {len(ground_truth_uncured_surface)}")
     if multithreaded:
-        uncured_voxel_error = bfs_search_c(0.0, ground_truth_uncured_surface, reconstruction)
+        uncured_voxel_error = sum(bfs_search_c(0, ground_truth_uncured_surface, reconstruction))
     else:
-        reconstruction_uncured_surface_mapping = [bfs_search(0.0, surface_voxel, reconstruction) for surface_voxel in ground_truth_uncured_surface]
+        reconstruction_uncured_surface_mapping = [bfs_search(0, surface_voxel, reconstruction) for surface_voxel in ground_truth_uncured_surface]
         print("done finding bfs of border voxels...")
     
         # sum the error
@@ -658,8 +658,8 @@ def calculate_optimal_rotations_surface_compare(ground_truth, predicted, max_ite
     
     
     print(f"finding border voxels...")
-    ground_truth_cured_surface = find_border_voxels(ground_truth, 1.0) # gets a list of voxel coordinates on the surface (cured)
-    ground_truth_uncured_surface = find_border_voxels(ground_truth, 0.0) # gets a list of voxel coordinates on the surface (cured)
+    ground_truth_cured_surface = find_border_voxels(ground_truth, 1) # gets a list of voxel coordinates on the surface (cured)
+    ground_truth_uncured_surface = find_border_voxels(ground_truth, 0) # gets a list of voxel coordinates on the surface (cured)
     print("done finding border voxels...")
 
     for iteration in range(max_iterations):
@@ -676,6 +676,7 @@ def calculate_optimal_rotations_surface_compare(ground_truth, predicted, max_ite
             elif not (temp == 1).any():
                 error.append(np.inf)
             else:
+                print(ground_truth_uncured_surface)
                 error.append(surface_compare_combined_error(ground_truth_cured_surface,  ground_truth_uncured_surface, temp))
             
             if print_errors:
@@ -769,6 +770,63 @@ def calculate_optimal_rotations(ground_truth, predicted, error_function, max_ite
 
     return best_rotations
 
+def plot_error_distribution(ground_truth, predicted, rotation_factor = 1):
+    
+    print("processing ground truth")
+    ground_truth = round_3d_array(ground_truth, round_down_threshold = 0.6, round_up_threshold = 0.85)
+    
+    
+    print(f"finding border voxels...")
+    ground_truth_cured_surface = find_border_voxels(ground_truth, 1) # gets a list of voxel coordinates on the surface (cured)
+    ground_truth_uncured_surface = find_border_voxels(ground_truth, 0) # gets a list of voxel coordinates on the surface (cured)
+    print("done finding border voxels...")
+
+    
+    reconstruction = rotation_factor * predicted
+    reconstruction = round_3d_array(reconstruction, round_down_threshold = 0.6, round_up_threshold = 0.85)
+
+    # calculate the error
+    if not (reconstruction == 0).any():
+        print("reconstruction is empty")
+    elif not (reconstruction == 1).any():
+        print("reconstruction is empty")
+    else:
+        e1 = bfs_search_c(1, ground_truth_cured_surface, reconstruction)
+        e2 = bfs_search_c(0, ground_truth_uncured_surface, reconstruction)
+        
+        e1_filtered = np.array(e1)[np.array(e1) != 4096]
+        e2_filtered = np.array(e2)[np.array(e2) != 4096]
+        print("total number of points we gave up on undercured error: ", len([np.array(e1) == 4096]))
+        print("total number of points we gave up on overcured error: ", len([np.array(e2) == 4096]))
+
+        # combined_data = np.concatenate([e1_filtered, e2_filtered])
+        min_val = 10 # np.min(combined_data)
+        max_val = 10 # np.max(combined_data)
+
+        # Create bins for double values
+        bins = np.linspace(min_val, max_val, 30)
+
+        # Plot for e1
+        plt.figure(figsize=(10, 5))
+        plt.hist(e1_filtered, bins=bins, alpha=0.5, label='e1', color='blue')
+        plt.xlabel('Values')
+        plt.ylabel('Frequency')
+        plt.title('Histogram of undercured')
+        plt.legend()
+        plt.show()
+
+        # Plot for e2
+        plt.figure(figsize=(10, 5))
+        plt.hist(e2_filtered, bins=bins, alpha=0.5, label='e2', color='orange')
+        plt.xlabel('Values')
+        plt.ylabel('Frequency')
+        plt.title('Histogram of overcured')
+        plt.legend()
+        plt.show()
+            
+        
+
+
 from stl import mesh
 
 def rotate_stl(input_filename, output_filename):
@@ -837,7 +895,6 @@ def batch_rotate_stl_files(input_folder, output_folder):
 ################################################################
 # C code calling to speed up bfs
 ################################################################
-
 import ctypes
 so_file = "./deepcallib_helper.so"
 
@@ -853,23 +910,32 @@ class Node(ctypes.Structure):
 
 # Define the function signature for the C function
 bfs_function = c_functions.bfs
-bfs_function.argtypes = [ctypes.c_float, ctypes.POINTER(Point), ctypes.c_int, ctypes.POINTER(ctypes.c_float), ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
-bfs_function.restype = ctypes.c_double
-"""
-performs bfs starting at start_point on space array. Stops when it seems a voxel with float_value
-"""
+bfs_function.argtypes = [ctypes.c_uint8, ctypes.POINTER(Point), ctypes.c_int, ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+bfs_function.restype = ctypes.POINTER(ctypes.c_double)
 
-def bfs_search_c(float_value, start_points, space_array, max_distance=3):
+def bfs_search_c(float_value, start_points, space_array, max_distance=10):
     # Convert Python list of start points to a C array of Point structures
     start_points_array = (Point * len(start_points))(*start_points)
 
     # Convert NumPy array to a C array
-    space_array_c = space_array.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+    space_array_c = space_array.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
 
     # Get the dimensions of the space array
     space_dimensions = np.array(space_array.shape, dtype=np.int32)
 
     # Call the C function
-    return bfs_function(float_value, start_points_array, len(start_points), space_array_c, max_distance, space_dimensions.ctypes.data_as(ctypes.POINTER(ctypes.c_int)))
-    
+    result_pointer = bfs_function(float_value, start_points_array, len(start_points), space_array_c, max_distance, space_dimensions.ctypes.data_as(ctypes.POINTER(ctypes.c_int)))
+
+    # Convert the result to a NumPy array
+    result_size = len(start_points)
+    result_array = np.ctypeslib.as_array(result_pointer, shape=(result_size,))
+
+    # Copy the result array to a Python list
+    result_list = result_array.tolist()
+
+    # Free the memory allocated in the C code
+    c_functions.free_memory(result_pointer)
+
+    return result_list
+
     
