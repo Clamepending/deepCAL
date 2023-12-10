@@ -534,11 +534,21 @@ def find_border_voxels(arr, value):
     value_indices = np.column_stack(np.where(arr == value))
 
     # Find indices of neighboring voxels without the specified value
-    neighbor_indices = [
-        tuple(idx + offset) for idx in value_indices
-        for offset in neighbor_offsets
-        if np.all((0 <= idx + offset) & (idx + offset < arr.shape)) and arr[tuple(idx + offset)] != value
-    ]
+    neighbor_indices = []
+
+    # print("looking in", value_indices)
+
+    for idx in value_indices:
+        add = False
+        for offset in neighbor_offsets:
+            new_idx = tuple(idx + offset)
+            within_bounds = all(0 <= i < dim for i, dim in zip(new_idx, arr.shape))
+            if within_bounds and arr[new_idx] != value:
+                add = True
+        
+        if add:
+            neighbor_indices.append(idx)
+                
 
     return neighbor_indices
 
@@ -939,3 +949,65 @@ def bfs_search_c(float_value, start_points, space_array, max_distance=10):
     return result_list
 
     
+"""
+input: 3d array
+
+Output: faded 3d array
+"""
+from collections import deque
+
+def bwdist(array, voxel_value):
+    print("processing ground truth")
+    array = round_3d_array(array, round_down_threshold=0.6, round_up_threshold=0.85)
+
+    print(f"finding border voxels...")
+    array_cured_surface = find_border_voxels(array, voxel_value)
+    print("done finding border voxels...", array_cured_surface)
+
+    # Define the 6 possible movement directions in 3D space
+    directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+
+    # Create a dictionary to store the distance values for each coordinate
+    distance_map = {tuple(point): 0 for point in array_cured_surface}
+
+    # Create a queue for BFS with the starting points
+    queue = deque(array_cured_surface)
+
+    while queue:
+        current_point = queue.popleft()
+        print("Current point", current_point)
+
+        # Expand to neighboring coordinates
+        for direction in directions:
+            new_point = tuple(np.add(current_point, direction))
+
+            # Check if the new point is within the space boundaries
+            if all(0 <= i < dim for i, dim in zip(new_point, array.shape)):
+
+                # Calculate the L2 distance from the current point to the new point
+                l2_distance = np.linalg.norm(np.array(current_point) - np.array(new_point))
+
+
+                if new_point not in distance_map:
+                    potential_distance = float('inf')
+
+                    # Add the new point to the queue for further exploration
+                    queue.append(new_point)
+                    
+                else:
+                    # Calculate the potential distance value for the new point
+                    potential_distance = distance_map[new_point] + l2_distance
+
+                # Update the distance value if it's smaller than the current value
+                if potential_distance < distance_map[current_point]:
+                    distance_map[current_point] = potential_distance
+                
+                
+
+    # Convert the distance map to a numpy array
+    distance_array = np.zeros_like(array, dtype=float)
+    for point, distance in distance_map.items():
+        distance_array[point] = distance
+
+    # If the desired value is not found, return None
+    return distance_array
