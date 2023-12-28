@@ -965,7 +965,9 @@ def bwdist(array, voxel_value):
     print("done finding border voxels...", array_cured_surface)
 
     # Define the 6 possible movement directions in 3D space
-    directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+    directions = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1),
+                  (1, 1, 0), (1, -1, 0), (-1, 1, 0), (-1, -1, 0), (0, 1, 1), (0, 1, -1), (0, -1, 1), (0, -1, -1), (1, 0, 1), (1, 0, -1), (-1, 0, 1), (-1, 0, -1),
+                  (1, 1, 1), (1, 1, -1), (1, -1, 1), (1, -1, -1), (-1, 1, 1), (-1, 1, -1), (-1,-1, 1), (-1, -1, -1)]
 
     # Create a dictionary to store the distance values for each coordinate
     distance_map = {tuple(point): 0 for point in array_cured_surface}
@@ -975,7 +977,7 @@ def bwdist(array, voxel_value):
 
     while queue:
         current_point = queue.popleft()
-        print("Current point", current_point)
+        # print("Current point", current_point)
 
         # Expand to neighboring coordinates
         for direction in directions:
@@ -999,8 +1001,8 @@ def bwdist(array, voxel_value):
                     potential_distance = distance_map[new_point] + l2_distance
 
                 # Update the distance value if it's smaller than the current value
-                if potential_distance < distance_map[current_point]:
-                    distance_map[current_point] = potential_distance
+                if distance_map.get(tuple(current_point)) == None or potential_distance < distance_map[tuple(current_point)]:
+                    distance_map[tuple(current_point)] = potential_distance
                 
                 
 
